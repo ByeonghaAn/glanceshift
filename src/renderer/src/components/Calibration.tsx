@@ -22,6 +22,8 @@ type Props = {
   onPointClick: (x: number, y: number) => void
   /** 완료/취소 콜백 */
   onDone: (completed: boolean) => void
+  /** 기존 캘리브레이션 데이터 초기화 (WebGazer.clearData) */
+  onClearCalibration?: () => Promise<void>
 }
 
 type Point = { id: string; x: number; y: number }
@@ -38,9 +40,21 @@ function makeGridPoints(width: number, height: number, margin = 0.1): Point[] {
   return out
 }
 
-export function Calibration({ onPointClick, onDone }: Props): JSX.Element {
+export function Calibration({ onPointClick, onDone, onClearCalibration }: Props): JSX.Element {
   const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight })
   const [counts, setCounts] = useState<Record<string, number>>({})
+  const [clearing, setClearing] = useState(false)
+
+  const handleClear = async (): Promise<void> => {
+    if (!onClearCalibration) return
+    setClearing(true)
+    try {
+      await onClearCalibration()
+      setCounts({})
+    } finally {
+      setClearing(false)
+    }
+  }
 
   useEffect(() => {
     const onResize = (): void => setViewport({ w: window.innerWidth, h: window.innerHeight })
@@ -84,6 +98,17 @@ export function Calibration({ onPointClick, onDone }: Props): JSX.Element {
           <div className="calib-progress-bar" style={{ width: `${progress * 100}%` }} />
         </div>
         <div className="calib-progress-text">{doneClicks} / {totalClicks}</div>
+        {onClearCalibration && (
+          <button
+            type="button"
+            className="calib-reset"
+            onClick={handleClear}
+            disabled={clearing}
+            title="이전 세션의 학습 데이터를 모두 지우고 새로 시작합니다"
+          >
+            {clearing ? '지우는 중…' : '기존 데이터 지우기'}
+          </button>
+        )}
       </div>
       {points.map((p) => {
         const c = counts[p.id] ?? 0

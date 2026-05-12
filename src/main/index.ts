@@ -24,8 +24,10 @@ let clickThrough = true
 
 function createOverlayWindow(): void {
   const primaryDisplay = screen.getPrimaryDisplay()
-  const { width, height } = primaryDisplay.workAreaSize
-  const { x, y } = primaryDisplay.workArea
+  // bounds = 전체 디스플레이 영역 (workArea 와 달리 dock·menu bar 영역도 포함).
+  // GlanceShift 의 edge gaze 영역은 화면의 진짜 가장자리를 의미하므로
+  // dock 위에도 GazeBar 가 뜰 수 있도록 전체 영역을 덮는다.
+  const { x, y, width, height } = primaryDisplay.bounds
 
   overlayWindow = new BrowserWindow({
     x,

@@ -1,25 +1,32 @@
 /**
- * GlanceShift App (Phase 2)
+ * GlanceShift App (Phase 3)
  *
  * 입력 채널:
  *   · 시선 — WebGazer + One Euro Filter, ⌘⇧K 로 9-point 캘리브
- *   · 머리 자세 — MediaPipe FaceLandmarker (yaw / pitch / roll)
+ *   · 머리 자세 — WebGazer 의 face mesh landmarks 에서 직접 계산한 yaw/pitch/roll
  *
- * 두 perception 트래커는 같은 카메라 영상을 공유한다:
- *   WebGazer 가 만든 <video id="webgazerVideoFeed"> 를 FaceLandmarker 가 재사용.
- *   따라서 카메라는 한 번만 잡힌다.
+ * Phase 3 추가:
+ *   · Edge Gaze Detector — dwell + hysteresis 로 가장자리 진입/이탈 판정
+ *   · 디버그 모드에서 4개 가장자리 zone 시각화
+ *   · 진입/이탈 이벤트 콘솔 로그
  */
 
 import { useEffect, useRef, useState } from 'react'
 import { DebugHud } from './components/DebugHud'
 import { GazeDot } from './components/GazeDot'
 import { Calibration } from './components/Calibration'
+import { EdgeZones } from './components/EdgeZones'
 import { createGazeTracker, type GazeSample, type TrackerStatus } from './perception/webgazer'
 import {
   createHeadTracker,
   type HeadSample,
   type HeadTrackerStatus
 } from './perception/face-landmarker'
+import {
+  EdgeDetector,
+  DEFAULT_EDGE_CONFIG,
+  type EdgeSnapshot
+} from './perception/edge-detector'
 
 type Point = { x: number; y: number; t: number }
 const ZERO_HEAD: HeadSample = {
@@ -46,6 +53,12 @@ export function App(): JSX.Element {
 
   const [calibrating, setCalibrating] = useState(false)
   const trackerRef = useRef<ReturnType<typeof createGazeTracker> | null>(null)
+
+  // Edge detector — point/viewport 변경 시마다 update, snapshot 으로 HUD/시각화 갱신
+  const edgeDetectorRef = useRef<EdgeDetector>(new EdgeDetector(DEFAULT_EDGE_CONFIG))
+  const [edgeSnapshot, setEdgeSnapshot] = useState<EdgeSnapshot>(() =>
+    edgeDetectorRef.current.snapshot(performance.now())
+  )
 
   // 1) 시선 + 머리 트래커 init — 카메라 권한 확인 후 순차 시작
   //     순서가 중요: WebGazer 가 video element 를 만든 다음에야 FaceLandmarker 가 그걸 잡을 수 있음.
@@ -142,6 +155,35 @@ export function App(): JSX.Element {
   // 어떤 입력을 표시할지
   const usingGaze = trackerStatus === 'ready' && gaze.x >= 0
   const point = usingGaze ? gaze : mouse
+
+  // 6) Edge Detector 갱신 — point 가 바뀔 때마다 update, 진입/이탈 이벤트는 콘솔에 로그
+  useEffect(() => {
+    if (point.x < 0 || point.y < 0) return
+    const evt = edgeDetectorRef.current.update(
+      { x: point.x, y: point.y },
+      viewport,
+      point.t || performance.now()
+    )
+    if (evt) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[edge] ${evt.type.toUpperCase()} ${evt.edge.padEnd(6)} t=${evt.t.toFixed(0)}ms`
+      )
+    }
+    setEdgeSnapshot(edgeDetectorRef.current.snapshot(point.t || performance.now()))
+  }, [point.x, point.y, point.t, viewport.w, viewport.h])
+
+  // 7) dwelling 중에는 point 가 안 움직여도 progress 가 자라야 하므로 RAF 로 보강
+  useEffect(() => {
+    if (edgeSnapshot.state !== 'dwelling') return
+    let raf = 0
+    const tick = (): void => {
+      setEdgeSnapshot(edgeDetectorRef.current.snapshot(performance.now()))
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [edgeSnapshot.state])
   const inputSource = usingGaze
     ? 'WebGazer (filtered)'
     : trackerStatus === 'loading'
@@ -154,6 +196,13 @@ export function App(): JSX.Element {
 
   return (
     <>
+      <EdgeZones
+        enterFrac={DEFAULT_EDGE_CONFIG.enterFrac}
+        viewport={viewport}
+        snapshot={edgeSnapshot}
+        visible={debugVisible}
+      />
+
       <GazeDot x={point.x} y={point.y} visible={debugVisible} />
 
       {debugVisible && (
@@ -166,6 +215,7 @@ export function App(): JSX.Element {
           headStatus={headStatus}
           headError={headError}
           head={head}
+          edge={edgeSnapshot}
         />
       )}
 
@@ -173,6 +223,10 @@ export function App(): JSX.Element {
         <Calibration
           onPointClick={(x, y) => trackerRef.current?.recordPoint(x, y)}
           onDone={() => setCalibrating(false)}
+          onClearCalibration={async () => {
+            await trackerRef.current?.clearCalibration()
+            setHasGazeData(false)
+          }}
         />
       )}
     </>

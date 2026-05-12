@@ -52,6 +52,13 @@ export interface WebGazerAPI {
   /** 현재 face-mesh tracker 객체. 478 landmarks 접근에 사용. */
   getTracker(): WebGazerTracker
 
+  /**
+   * WebGazer 의 자동 mouse listener (click + move) 등록/해제.
+   * GlanceShift 는 패시브 마우스 학습을 끄기 위해 begin() 직후 remove 를 호출한다.
+   */
+  addMouseEventListeners(): WebGazerAPI
+  removeMouseEventListeners(): WebGazerAPI
+
   params: {
     showVideo: boolean
     showFaceOverlay: boolean

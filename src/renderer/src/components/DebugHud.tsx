@@ -6,6 +6,7 @@
  */
 
 import type { HeadSample, HeadTrackerStatus } from '../perception/face-landmarker'
+import type { EdgeSnapshot } from '../perception/edge-detector'
 
 type Props = {
   point: { x: number; y: number; t: number }
@@ -16,6 +17,7 @@ type Props = {
   headStatus?: HeadTrackerStatus
   headError?: string | null
   head?: HeadSample
+  edge?: EdgeSnapshot
 }
 
 function fmtDeg(v: number): string {
@@ -38,7 +40,8 @@ export function DebugHud({
   trackerStatus,
   headStatus,
   headError,
-  head
+  head,
+  edge
 }: Props): JSX.Element {
   // 영역 분류 미리보기 (Phase 3 edge-detector 의 placeholder)
   const edgeFrac = 0.08
@@ -132,6 +135,37 @@ export function DebugHud({
                 : '— no face —'}
             </span>
           </div>
+        </>
+      )}
+
+      {edge && (
+        <>
+          <div className="hud-sep" />
+          <div className="row">
+            <span className="label">edge state</span>
+            <span
+              className="value"
+              style={{
+                color:
+                  edge.state === 'entered'
+                    ? '#7be38a'
+                    : edge.state === 'dwelling'
+                      ? '#5aa9ff'
+                      : 'rgba(255,255,255,0.5)'
+              }}
+            >
+              {edge.state}
+              {edge.edge ? ` · ${edge.edge}` : ''}
+            </span>
+          </div>
+          {edge.state === 'dwelling' && (
+            <div className="row">
+              <span className="label">dwell</span>
+              <span className="value">
+                {(edge.dwellProgress * 100).toFixed(0)}%
+              </span>
+            </div>
+          )}
         </>
       )}
 

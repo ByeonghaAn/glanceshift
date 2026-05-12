@@ -105,6 +105,17 @@ export function createGazeTracker(): GazeTracker {
       // 여기서 'mediapipe/face_mesh/*' 파일들이 fetch 되므로 public/ 에 복사돼 있어야 한다.
       await wg.begin()
 
+      // ⚠️ 중요: WebGazer 의 기본 패시브 마우스 학습을 끈다.
+      //
+      // WebGazer 는 document 에 mousemove/click 리스너를 달고 모든 좌표를
+      // "사용자가 보고 있는 곳" 으로 가정해 회귀 모델에 계속 주입한다.
+      // GlanceShift 의 사용 시나리오는 손(마우스)이 메인 작업에 묶여 있고
+      // 시선은 별도로 움직이는 상황이라 이 가정이 깨진다 — 시간이 갈수록
+      // 모델이 마우스 궤적 쪽으로 drift 한다.
+      //
+      // 우리는 ⌘⇧K 의 9-point 캘리브레이션에서 명시적 클릭만 학습 신호로 쓴다.
+      try { wg.removeMouseEventListeners() } catch { /* */ }
+
       // begin 이후에 안전하게 UI 토글 (예방적; params만으로도 충분하지만 명시적으로).
       try {
         wg.showVideo(false)
