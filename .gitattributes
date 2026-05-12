@@ -1,0 +1,18 @@
+# 모든 텍스트 파일은 LF 로 통일 — Windows/macOS 혼합 작업 시 diff 노이즈 방지
+* text=auto eol=lf
+
+# 바이너리 자산 (혹시 추적할 일이 생기면)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.wasm binary
+*.data binary
+*.mp4 binary
+
+# Windows 셸 스크립트는 CRLF 유지
+*.bat text eol=crlf
+*.cmd text eol=crlf

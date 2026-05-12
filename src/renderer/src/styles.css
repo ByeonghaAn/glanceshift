@@ -1,0 +1,155 @@
+/* GlanceShift renderer styles
+ * 핵심 원칙: McLuhan cool 매체 — 화면을 가능한 한 가리지 않는다.
+ * Iqbal & Horvitz (2007) — visual occlusion cost 최소화.
+ */
+
+:root {
+  --gs-accent: #5aa9ff;
+  --gs-bg-translucent: rgba(15, 18, 24, 0.55);
+  --gs-border: rgba(255, 255, 255, 0.08);
+  --gs-text: rgba(255, 255, 255, 0.92);
+  --gs-text-dim: rgba(255, 255, 255, 0.55);
+}
+
+/* 디버그 HUD — Cool 매체 원칙상 평소엔 보이지 않게 */
+.debug-hud {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  background: var(--gs-bg-translucent);
+  border: 1px solid var(--gs-border);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  color: var(--gs-text);
+  line-height: 1.6;
+  pointer-events: none;
+  z-index: 9999;
+  min-width: 240px;
+}
+
+.debug-hud h4 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--gs-accent);
+  text-transform: uppercase;
+}
+
+.debug-hud .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.debug-hud .label { color: var(--gs-text-dim); }
+.debug-hud .value { color: var(--gs-text); font-variant-numeric: tabular-nums; }
+
+/* Edge zone 디버그 시각화 — 평소엔 숨김, 디버그 모드에서만 */
+.edge-zone-debug {
+  position: fixed;
+  background: rgba(90, 169, 255, 0.08);
+  border: 1px dashed rgba(90, 169, 255, 0.3);
+  pointer-events: none;
+  z-index: 100;
+}
+
+/* 디버그 시선 도트 */
+.gaze-dot {
+  position: fixed;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(90, 169, 255, 0.9);
+  box-shadow: 0 0 12px rgba(90, 169, 255, 0.5);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 9000;
+  transition: opacity 200ms ease;
+}
+
+/* ===== Calibration ===== */
+.calib-root {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 10, 14, 0.78);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 8000;
+}
+
+.calib-header {
+  position: absolute;
+  top: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  color: var(--gs-text);
+  max-width: 480px;
+}
+.calib-header h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.calib-header p {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--gs-text-dim);
+}
+.calib-progress {
+  width: 320px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  margin: 0 auto 6px;
+  overflow: hidden;
+}
+.calib-progress-bar {
+  height: 100%;
+  background: var(--gs-accent);
+  transition: width 120ms ease;
+}
+.calib-progress-text {
+  font-size: 11px;
+  color: var(--gs-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.calib-dot {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(90, 169, 255, 0.85);
+  background: rgba(90, 169, 255, 0.18);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: crosshair;
+  transform: translate(-50%, -50%);
+  transition: background 120ms ease, transform 80ms ease, border-color 120ms ease;
+  padding: 0;
+}
+.calib-dot:hover {
+  background: rgba(90, 169, 255, 0.32);
+}
+.calib-dot:active {
+  transform: translate(-50%, -50%) scale(0.92);
+}
+.calib-dot.filled {
+  background: rgba(80, 220, 140, 0.4);
+  border-color: rgba(80, 220, 140, 0.95);
+}
+.calib-dot-count {
+  pointer-events: none;
+}

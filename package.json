@@ -1,0 +1,39 @@
+{
+  "name": "glanceshift",
+  "version": "0.0.1",
+  "description": "GlanceShift — Hard interruption을 Soft interruption으로 변환하는 시선+머리 인터랙션 오버레이",
+  "main": "./out/main/index.js",
+  "author": "GlanceShift Team",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "copy:webgazer": "node scripts/copy-webgazer.mjs",
+    "predev": "npm run copy:webgazer",
+    "prebuild": "npm run copy:webgazer",
+    "postinstall": "node scripts/copy-webgazer.mjs || true",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "start": "electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web"
+  },
+  "dependencies": {
+    "@electron-toolkit/preload": "^3.0.1",
+    "@electron-toolkit/utils": "^3.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "webgazer": "^3.5.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "electron": "^32.0.0",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0"
+  }
+}

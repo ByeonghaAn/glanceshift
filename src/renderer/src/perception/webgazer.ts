@@ -1,0 +1,175 @@
+/**
+ * WebGazer 래퍼.
+ *
+ * 책임:
+ *   - WebGazer 전역 객체 로드를 기다리고 (script defer로 늦게 등장)
+ *   - UI overlay(비디오·페이스 메쉬·예측 도트)를 모두 끄고
+ *   - 시선 좌표를 One Euro Filter로 스무딩해서 콜백으로 흘려준다.
+ *   - 캘리브레이션 점 클릭을 WebGazer에 전달한다.
+ *
+ * 보고서 §5.2 — WebGazer ~4° 정확도 (Papoutsaki et al., 2016).
+ */
+
+import { OneEuro2D } from './one-euro'
+import type { WebGazerAPI } from '../types/webgazer'
+
+export type GazeSample = {
+  /** 화면(클라이언트) 좌표계, viewport 기준. (-1, -1)이면 추적 실패 */
+  x: number
+  y: number
+  /** 필터 적용 후 좌표 */
+  fx: number
+  fy: number
+  /** ms (performance.now()) */
+  t: number
+}
+
+export type TrackerStatus =
+  | 'unloaded'      // 스크립트 미로드
+  | 'loading'       // begin() 진행 중
+  | 'ready'         // 추적 중, 데이터 흐름
+  | 'error'         // 시작 실패
+  | 'stopped'       // 명시적으로 정지
+
+export interface GazeTracker {
+  start(): Promise<void>
+  stop(): void
+  pause(): void
+  resume(): void
+  onSample(cb: (s: GazeSample) => void): () => void
+  onStatus(cb: (s: TrackerStatus, error?: string) => void): () => void
+  status(): TrackerStatus
+  /** 캘리브레이션용 클릭 좌표 입력 */
+  recordPoint(x: number, y: number): void
+  clearCalibration(): Promise<void>
+  /** One Euro 파라미터 튜닝 */
+  tuneFilter(opts: { mincutoff?: number; beta?: number; dcutoff?: number }): void
+}
+
+function waitForWebGazer(timeoutMs = 8000): Promise<WebGazerAPI> {
+  return new Promise((resolve, reject) => {
+    const start = performance.now()
+    const check = (): void => {
+      const wg = window.webgazer
+      if (wg) {
+        resolve(wg)
+        return
+      }
+      if (performance.now() - start > timeoutMs) {
+        reject(new Error('webgazer global not found (script load failure?)'))
+        return
+      }
+      setTimeout(check, 50)
+    }
+    check()
+  })
+}
+
+export function createGazeTracker(): GazeTracker {
+  const sampleListeners = new Set<(s: GazeSample) => void>()
+  const statusListeners = new Set<(s: TrackerStatus, error?: string) => void>()
+  const filter = new OneEuro2D({ freq: 60, mincutoff: 1.0, beta: 0.007 })
+  let status: TrackerStatus = 'unloaded'
+  let wg: WebGazerAPI | null = null
+
+  function setStatus(next: TrackerStatus, error?: string): void {
+    status = next
+    statusListeners.forEach((cb) => cb(next, error))
+  }
+
+  async function start(): Promise<void> {
+    if (status === 'ready' || status === 'loading') return
+    setStatus('loading')
+    try {
+      wg = await waitForWebGazer()
+
+      // begin() 전엔 params만 만진다. WebGazer는 init() 안에서 이 params 값을 보고
+      // 비디오·페이스 오버레이·gaze dot 의 초기 display 상태를 결정한다.
+      wg.params.showVideo = false
+      wg.params.showFaceOverlay = false
+      wg.params.showFaceFeedbackBox = false
+      wg.params.showGazeDot = false
+      wg.params.showVideoPreview = false
+      // 세션 간 캘리브레이션 보존 (localforage / IndexedDB)
+      wg.params.saveDataAcrossSessions = true
+
+      wg.setGazeListener((data) => {
+        const t = performance.now()
+        if (!data) return // 얼굴 검출 실패 프레임
+        const { x: fx, y: fy } = filter.filter(data.x, data.y, t)
+        const s: GazeSample = { x: data.x, y: data.y, fx, fy, t }
+        sampleListeners.forEach((cb) => cb(s))
+      })
+
+      // begin() — 카메라 stream 획득 + MediaPipe face_mesh 모델 로드 + loop() 시작.
+      // 여기서 'mediapipe/face_mesh/*' 파일들이 fetch 되므로 public/ 에 복사돼 있어야 한다.
+      await wg.begin()
+
+      // begin 이후에 안전하게 UI 토글 (예방적; params만으로도 충분하지만 명시적으로).
+      try {
+        wg.showVideo(false)
+        wg.showFaceOverlay(false)
+        wg.showFaceFeedbackBox(false)
+        wg.showPredictionPoints(false)
+      } catch {
+        // showXxx 가 일부 버전에서 throw 할 수 있어도 begin은 성공한 상태라 무시.
+      }
+
+      setStatus('ready')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setStatus('error', msg)
+      throw e
+    }
+  }
+
+  function stop(): void {
+    try {
+      wg?.end()
+    } catch { /* */ }
+    setStatus('stopped')
+  }
+
+  function pause(): void {
+    wg?.pause()
+  }
+
+  function resume(): void {
+    wg?.resume()
+  }
+
+  function recordPoint(x: number, y: number): void {
+    wg?.recordScreenPosition(x, y, 'click')
+  }
+
+  async function clearCalibration(): Promise<void> {
+    if (!wg) return
+    await wg.clearData()
+    filter.reset()
+  }
+
+  function tuneFilter(opts: { mincutoff?: number; beta?: number; dcutoff?: number }): void {
+    filter.tune(opts)
+  }
+
+  return {
+    start,
+    stop,
+    pause,
+    resume,
+    onSample(cb) {
+      sampleListeners.add(cb)
+      return () => sampleListeners.delete(cb)
+    },
+    onStatus(cb) {
+      statusListeners.add(cb)
+      // 현재 상태도 즉시 전달
+      cb(status)
+      return () => statusListeners.delete(cb)
+    },
+    status: () => status,
+    recordPoint,
+    clearCalibration,
+    tuneFilter
+  }
+}
