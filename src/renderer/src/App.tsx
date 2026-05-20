@@ -57,8 +57,15 @@ const ZERO_HEAD: HeadSample = {
 }
 
 /**
- * 마지막으로 hover 한 control 을 활성 상태로 유지하는 시간 (ms).
- * 이 동안 시선이 중앙으로 돌아가도 head tilt 로 그 control 의 값을 계속 조절할 수 있다.
+ * 항목 위 시선이 머물러야 "선택" 으로 간주되는 dwell 시간 (ms).
+ * 짧은 hover (탐색) 와 의도적 선택을 구분. dwell 진행은 GazeDot 주변 원형 ring 으로 시각화.
+ */
+const SELECT_DWELL_MS = 1000
+
+/**
+ * 선택된 control 의 조작 권한 유지 시간 (ms).
+ * 이 동안 시선이 항목을 벗어나도 head tilt 로 계속 값을 조절할 수 있다. 다른 항목에
+ * SELECT_DWELL_MS 동안 dwell 하면 새 항목으로 선택이 전환되고 타이머가 재시작된다.
  */
 const LATCH_MS = 3000
 
@@ -123,9 +130,17 @@ export function App(): JSX.Element {
 
   const [gazeBarHoverId, setGazeBarHoverId] = useState<string | null>(null)
 
-  // 마지막으로 바라본 control 을 LATCH_MS (3000) 동안 유지한다 (PR #1 기능).
-  // 시선이 중앙으로 돌아가도 head tilt 로 계속 조절 가능. 만료 책임은 setTimeout 한 곳에만 둠.
-  const [activeControlId, setActiveControlId] = useState<string | null>(null)
+  // ===== Dwell-to-select + Latch =====
+  // 1) hover → 같은 항목 위 SELECT_DWELL_MS 동안 시선 유지 시 selectedControlId 로 commit
+  // 2) selected 상태에서 LATCH_MS 동안 head tilt 로 조작 가능 (시선이 어디 있든)
+  // 3) selected 중에도 다른 항목에 다시 SELECT_DWELL_MS dwell 하면 새 선택으로 전환 (latch 재시작)
+  //
+  // 짧은 hover 는 "탐색", 1초 dwell 은 "선택 의도" 로 해석한다.
+  const [selectedControlId, setSelectedControlId] = useState<string | null>(null)
+  /** GazeDot ring 표시용 — null 이면 ring 안 보임. itemId 는 디버깅용. */
+  const [dwellProgress, setDwellProgress] = useState<{ itemId: string; progress: number } | null>(null)
+  /** 현재 dwell 누적 중인 hover 시작 정보. progress 는 setInterval 로 계산. */
+  const hoverDwellRef = useRef<{ itemId: string; startedAt: number } | null>(null)
   const latchTimerRef = useRef<number | null>(null)
 
   // 항목별 저장된 슬라이더 값 (commit 된 값) — OS bridge 가 이걸 읽어 적용
@@ -392,20 +407,54 @@ export function App(): JSX.Element {
   // GazeBar 의 항목 hover 계산은 effectiveGaze 를 사용 — snapping 중에는 rail 좌표.
   const gazeBarGaze = effectiveGaze
 
-  // hover 가 생기면 그 항목으로 active 갱신 + 만료 timer reschedule.
-  // 만료 시점 책임은 이 setTimeout 안에서만 — derived value 가 아니라 명시적 state 전이.
+  // hover 변화 → dwell 시작/리셋. 같은 항목 유지 시 startedAt 보존, 다른 항목으로 바뀌면 새 dwell.
+  // selected 가 이미 있어도 dwell 추적은 계속 — 사용자가 새 항목으로 1초 dwell 하면 재선택 허용.
+  useEffect(() => {
+    if (gazeBarHoverId == null) {
+      hoverDwellRef.current = null
+      setDwellProgress(null)
+      return
+    }
+    const cur = hoverDwellRef.current
+    if (cur && cur.itemId === gazeBarHoverId) {
+      // 같은 항목 위 hover 유지 — startedAt 보존
+      return
+    }
+    // 새 항목 hover 시작
+    hoverDwellRef.current = { itemId: gazeBarHoverId, startedAt: performance.now() }
+    setDwellProgress({ itemId: gazeBarHoverId, progress: 0 })
+  }, [gazeBarHoverId])
+
+  // dwell 진행 감시 — 50ms 마다 progress 갱신, SELECT_DWELL_MS 도달 시 selected commit.
+  // dwell 충족 후엔 hoverDwellRef = null (selected 가 책임). 같은 항목에 다시 머무르려면
+  // 일단 hover 가 끊긴 뒤 (다른 항목 또는 GazeBar 영역 밖) 새로 진입해야 dwell 재개 — 자연스러움.
   useEffect(() => {
     if (gazeBarHoverId == null) return
+    const intervalId = window.setInterval(() => {
+      const dwell = hoverDwellRef.current
+      if (!dwell) return
+      const now = performance.now()
+      const progress = Math.min(1, (now - dwell.startedAt) / SELECT_DWELL_MS)
+      setDwellProgress({ itemId: dwell.itemId, progress })
 
-    setActiveControlId(gazeBarHoverId)
+      if (progress >= 1) {
+        // commit
+        const commitId = dwell.itemId
+        hoverDwellRef.current = null
+        setDwellProgress(null)
+        setSelectedControlId(commitId)
 
-    if (latchTimerRef.current != null) {
-      window.clearTimeout(latchTimerRef.current)
-    }
-    latchTimerRef.current = window.setTimeout(() => {
-      setActiveControlId((cur) => (cur === gazeBarHoverId ? null : cur))
-      latchTimerRef.current = null
-    }, LATCH_MS)
+        // latch 타이머 재시작 — 기존 타이머 있으면 cancel
+        if (latchTimerRef.current != null) {
+          window.clearTimeout(latchTimerRef.current)
+        }
+        latchTimerRef.current = window.setTimeout(() => {
+          setSelectedControlId((c) => (c === commitId ? null : c))
+          latchTimerRef.current = null
+        }, LATCH_MS)
+      }
+    }, 50)
+    return () => window.clearInterval(intervalId)
   }, [gazeBarHoverId])
 
   // unmount 시 latch timer 정리
@@ -418,21 +467,21 @@ export function App(): JSX.Element {
     }
   }, [])
 
-  // gazeBarEdge — entered 상태이면 현재 edge, 그 외엔 activeControlId 가 살아있는 동안
-  // 마지막 entered edge 로 fallback. 시선이 중앙으로 돌아가도 latch 동안 UI 유지.
+  // gazeBarEdge — entered 상태이면 현재 edge, 그 외엔 selectedControlId 가 살아있는 동안
+  // 마지막 entered edge 로 fallback. 시선이 중앙으로 돌아가도 latch (LATCH_MS) 동안 UI 유지.
   const gazeBarEdge: Edge | null =
     edgeSnapshot.state === 'entered' && edgeSnapshot.edge
       ? edgeSnapshot.edge
-      : activeControlId != null
+      : selectedControlId != null
         ? lastEnteredEdgeRef.current
         : null
 
-  // 8) Slider engagement — activeControlId 가 latch 되어 있으면 시선이 중앙으로 옮겨가도
-  //    LATCH_MS 동안 head roll 로 조절 가능. edge 진입 상태와 분리된 활성 조건.
-  const engaged = activeControlId != null && head.detected
+  // 8) Slider engagement — selectedControlId 가 latch 되어 있는 동안 시선과 무관하게
+  //    head roll 로 그 control 의 값을 조절. SELECT_DWELL_MS dwell → select 의 결과로만 켜짐.
+  const engaged = selectedControlId != null && head.detected
 
   useEffect(() => {
-    if (!engaged || activeControlId == null) {
+    if (!engaged || selectedControlId == null) {
       setLiveSliderValue(null)
       return
     }
@@ -444,25 +493,25 @@ export function App(): JSX.Element {
     // OS bridge throttled push — 100ms 마다 최대 1회.
     const now = performance.now()
     const last = lastOsPushRef.current
-    const reset = last.itemId !== activeControlId
+    const reset = last.itemId !== selectedControlId
 
     if (reset || now - last.t >= 100) {
-      lastOsPushRef.current = { itemId: activeControlId, t: now }
+      lastOsPushRef.current = { itemId: selectedControlId, t: now }
 
-      if (activeControlId === 'volume') {
+      if (selectedControlId === 'volume') {
         window.glanceshift.setVolume(v)
-      } else if (activeControlId === 'brightness') {
+      } else if (selectedControlId === 'brightness') {
         window.glanceshift.setBrightness(v)
       }
     }
-  }, [engaged, head.fRoll, activeControlId])
+  }, [engaged, head.fRoll, selectedControlId])
 
-  // 9) Commit on active control release — activeControlId 가 다른 항목/null 로 변하면
+  // 9) Commit on selection change — selectedControlId 가 다른 항목/null 로 변하면
   //    직전 항목의 마지막 live 값을 OS 에 한 번 더 push (throttle 누락 방지) + sliderValues 저장.
   useEffect(() => {
     const prev = prevActiveRef.current
 
-    if (prev && prev !== activeControlId && lastLiveRef.current != null) {
+    if (prev && prev !== selectedControlId && lastLiveRef.current != null) {
       const committed = lastLiveRef.current
       setSliderValues((cur) => ({ ...cur, [prev]: committed }))
 
@@ -478,8 +527,8 @@ export function App(): JSX.Element {
       lastOsPushRef.current = { itemId: null, t: 0 } // throttle reset
     }
 
-    prevActiveRef.current = activeControlId
-  }, [activeControlId])
+    prevActiveRef.current = selectedControlId
+  }, [selectedControlId])
 
   // 10) 마운트 시 현재 OS 값 읽어 sliderValues 동기화 — GazeBar 가 떴을 때 현재 시스템 상태를
   // 기준선으로 보여주기 위함. brightness 는 brightness CLI 없으면 null → 기본값 유지.
@@ -530,7 +579,7 @@ export function App(): JSX.Element {
         valuesById={sliderValues}
         liveValue={liveSliderValue}
         snapHover={useSnap}
-        lockedItemId={activeControlId}
+        lockedItemId={selectedControlId}
       />
 
       <GazeDot
@@ -539,6 +588,7 @@ export function App(): JSX.Element {
         visible={debugVisible}
         snap={useSnap}
         snapAnimating={snapAnimating}
+        dwellProgress={dwellProgress?.progress ?? null}
       />
 
       {debugVisible && (

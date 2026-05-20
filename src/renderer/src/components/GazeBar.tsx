@@ -43,8 +43,9 @@ type Props = {
   /** true 면 hover 계산이 deterministic — 항상 가장 가까운 항목 (반경 제한 없이). Mode 2/3 용 */
   snapHover?: boolean
   /**
-   * Latch 된 항목 — 시선이 떠나도 일정 시간 동안 이 항목이 "조작 중" 으로 강조됨.
-   * 설정 시 hover 결정과 시각 강조가 이 id 로 강제된다. App 의 activeControlId 와 연동.
+   * Selected (1초 dwell 로 commit 된) 항목 — head tilt 조작 권한이 있는 control.
+   * 시각 강조만 한다 (`.gazebar-item.locked`). hover 결정은 시선 기반 그대로 — 사용자가
+   * 다른 항목을 자유롭게 탐색하고 1초 dwell 시 재선택할 수 있어야 함.
    */
   lockedItemId?: string | null
 }
@@ -114,12 +115,10 @@ function GazeBarImpl({
     [renderedEdge, viewport]
   )
 
+  // hover 결정은 항상 gaze 기반 — lockedItemId 의 영향 받지 않음.
+  // 이전 구현은 lockedItemId 가 있으면 hoveredId 를 그쪽으로 강제했는데, 그러면 3초 latch
+  // 동안 다른 항목 탐색 자체가 불가능했다 (재선택 dwell 도 못 누적). 분리한다.
   const hoveredId = useMemo(() => {
-    // lockedItemId 우선 — 조작 모드 latch 중에는 시선과 무관하게 이 항목을 강조 유지.
-    // 단 items 안에 실제로 존재해야 함 (방어).
-    if (lockedItemId && items.some((i) => i.id === lockedItemId)) {
-      return lockedItemId
-    }
     if (!geom || !gazePoint || !items.length) return null
     const isVertical = geom.isVertical
     const major = isVertical ? gazePoint.y : gazePoint.x
@@ -148,7 +147,7 @@ function GazeBarImpl({
       }
     }
     return bestId
-  }, [geom, gazePoint, items, snapHover, lockedItemId])
+  }, [geom, gazePoint, items, snapHover])
 
   // hover 변화 알림
   useEffect(() => {
@@ -209,10 +208,13 @@ function GazeBarImpl({
                 transparent ${percent}%, transparent 100%)`
             }
 
+        const isLocked = item.id === lockedItemId
         return (
           <div
             key={item.id}
-            className={`gazebar-item${isHover ? ' hover' : ''}`}
+            className={
+              `gazebar-item${isHover ? ' hover' : ''}${isLocked ? ' locked' : ''}`
+            }
             style={{
               flex: 1,
               flexDirection: isVertical ? 'column' : 'row',
