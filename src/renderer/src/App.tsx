@@ -27,6 +27,7 @@ import {
 import {
   EdgeDetector,
   EDGE_MODE_PROFILES,
+  type Edge,
   type EdgeSnapshot,
   type ModeLabel
 } from './perception/edge-detector'
@@ -328,9 +329,16 @@ export function App(): JSX.Element {
           ? 'mouse (needs calibration — ⌘⇧K)'
           : 'mouse (Phase 0 fallback)'
 
-  // GazeBar 는 edge state 가 'entered' 인 동안만 보임.
-  // dwelling 단계에서는 EdgeZones 의 highlight 가 미리보기 역할.
-  const gazeBarEdge = edgeSnapshot.state === 'entered' ? edgeSnapshot.edge : null
+  // GazeBar 는 edge state 가 'entered' 인 동안 보임.
+  // 추가로 — activeControl 이 latch 되어 있는 동안에는 시선이 중앙으로 돌아가도
+  // 마지막으로 진입했던 edge 를 유지해 GazeBar 를 그대로 띄워둔다.
+  // (조작 모드 중에는 값 변화가 시각화돼야 사용자가 head tilt 결과를 확인 가능)
+  const lastEnteredEdgeRef = useRef<Edge | null>(null)
+  useEffect(() => {
+    if (edgeSnapshot.state === 'entered' && edgeSnapshot.edge) {
+      lastEnteredEdgeRef.current = edgeSnapshot.edge
+    }
+  }, [edgeSnapshot.state, edgeSnapshot.edge])
 
   // effectiveGaze — snapping mode 의 lock 중에는 rail 위로 강제. perpendicular jitter 무관.
   // 그 외 mode 는 그냥 원본 point.
@@ -384,6 +392,15 @@ export function App(): JSX.Element {
     latchedControlId != null && performance.now() < latchExpiresAt
       ? latchedControlId
       : null
+
+  // gazeBarEdge — entered 상태이면 현재 edge, 그 외엔 activeControlId 가 살아있는 동안
+  // 마지막 entered edge 로 fallback. 시선이 중앙으로 돌아가도 latch 동안 UI 유지.
+  const gazeBarEdge: Edge | null =
+    edgeSnapshot.state === 'entered' && edgeSnapshot.edge
+      ? edgeSnapshot.edge
+      : activeControlId != null
+        ? lastEnteredEdgeRef.current
+        : null
 
   // 8) Slider engagement — hover 중인 항목이 있고 face 가 검출됐으면 head roll 로 live value 계산
   //const engaged = gazeBarEdge != null && gazeBarHoverId != null && head.detected
@@ -474,6 +491,8 @@ export function App(): JSX.Element {
     <>
       <EdgeZones
         enterFrac={EDGE_MODE_PROFILES[edgeMode].enterFrac}
+        intentZoneFrac={EDGE_MODE_PROFILES[edgeMode].snap?.intentZoneFrac ?? null}
+        lockZoneFrac={EDGE_MODE_PROFILES[edgeMode].snap?.lockZoneFrac ?? null}
         viewport={viewport}
         snapshot={edgeSnapshot}
         visible={debugVisible}
@@ -487,6 +506,8 @@ export function App(): JSX.Element {
         onHoverChange={setGazeBarHoverId}
         valuesById={sliderValues}
         liveValue={liveSliderValue}
+        snapHover={useSnap}
+        lockedItemId={activeControlId}
       />
 
       <GazeDot

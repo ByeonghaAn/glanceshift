@@ -42,6 +42,11 @@ type Props = {
   liveValue?: number | null
   /** true 면 hover 계산이 deterministic — 항상 가장 가까운 항목 (반경 제한 없이). Mode 2/3 용 */
   snapHover?: boolean
+  /**
+   * Latch 된 항목 — 시선이 떠나도 일정 시간 동안 이 항목이 "조작 중" 으로 강조됨.
+   * 설정 시 hover 결정과 시각 강조가 이 id 로 강제된다. App 의 activeControlId 와 연동.
+   */
+  lockedItemId?: string | null
 }
 
 /** 가장자리에서 사이드바가 차지하는 픽셀 폭 / 길이 계산 */
@@ -69,7 +74,8 @@ export function GazeBar({
   onHoverChange,
   valuesById,
   liveValue,
-  snapHover
+  snapHover,
+  lockedItemId
 }: Props): JSX.Element | null {
   // edge 가 null 이면 짧은 exit 애니메이션 후 unmount
   const [renderedEdge, setRenderedEdge] = useState<Edge | null>(edge)
@@ -109,6 +115,11 @@ export function GazeBar({
   )
 
   const hoveredId = useMemo(() => {
+    // lockedItemId 우선 — 조작 모드 latch 중에는 시선과 무관하게 이 항목을 강조 유지.
+    // 단 items 안에 실제로 존재해야 함 (방어).
+    if (lockedItemId && items.some((i) => i.id === lockedItemId)) {
+      return lockedItemId
+    }
     if (!geom || !gazePoint || !items.length) return null
     const isVertical = geom.isVertical
     const major = isVertical ? gazePoint.y : gazePoint.x
@@ -137,7 +148,7 @@ export function GazeBar({
       }
     }
     return bestId
-  }, [geom, gazePoint, items, snapHover])
+  }, [geom, gazePoint, items, snapHover, lockedItemId])
 
   // hover 변화 알림
   useEffect(() => {

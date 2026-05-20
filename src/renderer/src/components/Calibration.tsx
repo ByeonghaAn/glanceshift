@@ -27,6 +27,11 @@ type Props = {
   onClearCalibration?: () => Promise<void>
   /** App 에서 흐르는 현재 head/iris 상태. quality gating 용. */
   head?: HeadSample | null
+  /**
+   * 명시적 viewport — 제공되면 그리드 좌표 계산에 사용. 미설정 시 window.innerWidth/Height fallback.
+   * App 의 resize 와 동기화하고 싶을 때 prop 으로 내려주는 용도.
+   */
+  viewport?: { w: number; h: number }
 }
 
 type Point = { id: string; x: number; y: number }

@@ -18,6 +18,8 @@ type Props = {
   headError?: string | null
   head?: HeadSample
   edge?: EdgeSnapshot
+  /** 현재 mode label — edge?.modeLabel 과 동일하지만 edge 가 없어도 표시 가능하도록. */
+  edgeMode?: string
   gazeBarHover?: string | null
   liveSliderValue?: number | null
   sliderValues?: Record<string, number>
